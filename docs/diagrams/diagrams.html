@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --bg:#f7f5ef; --ink:#1f2328; --muted:#6b7280; --line:#d8d3c6;
+    --amber:#b7791f; --amber-soft:#f3e3c3; --teal:#0f766e; --teal-soft:#d9eeea;
+    --blue:#2f5d8a; --blue-soft:#dfe9f2; --white:#fff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;width:1600px;height:auto;overflow:hidden;background:var(--bg);
+    font-family:"Microsoft YaHei","Noto Sans SC","PingFang SC",sans-serif;color:var(--ink)}
+  .slide{display:none;width:1600px;height:1000px;padding:56px 68px 48px;position:relative;overflow:hidden}
+  .slide.active{display:block}
+  .slide.d1,.slide.d4{height:900px}
+  .slide.d2{height:980px}
+  .slide.d3{height:1020px}
+  .kicker{font-size:15px;letter-spacing:.18em;color:var(--amber);font-weight:700;text-transform:uppercase}
+  .title{font-size:40px;line-height:1.16;font-weight:800;margin:8px 0 8px;letter-spacing:-.01em}
+  .subtitle{font-size:19px;line-height:1.5;color:var(--muted);margin-bottom:30px}
+  .box{background:var(--white);border:1.5px solid var(--line);border-radius:16px;
+    padding:18px 20px;box-shadow:0 8px 22px rgba(31,35,40,.06);min-width:0}
+  .box h3{font-size:21px;line-height:1.25;margin:0 0 8px;font-weight:800}
+  .box p{font-size:16px;line-height:1.55;margin:3px 0;color:#374151}
+  .box .small{font-size:14px;color:var(--muted);line-height:1.5}
+  .amber{border-color:#d9a441;background:linear-gradient(180deg,#fffdf8,#fdf6e8)}
+  .teal{border-color:#6fb8ae;background:linear-gradient(180deg,#f8fdfc,#eaf6f3)}
+  .blue{border-color:#8fb0cc;background:linear-gradient(180deg,#fbfdff,#edf4fa)}
+  .core{border-color:var(--amber);border-width:2.5px;background:linear-gradient(180deg,#fff9ec,#f8e8c7);
+    box-shadow:0 14px 34px rgba(183,121,31,.18)}
+  .core h3{font-size:25px}
+  .pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:13px;font-weight:700;
+    background:var(--amber-soft);color:#7a4c0b;margin-right:6px}
+  .pill.teal{background:var(--teal-soft);color:#0b5c55}
+  .pill.blue{background:var(--blue-soft);color:#244b70}
+  .row{display:flex;align-items:stretch;gap:0}
+  .arrow{display:flex;align-items:center;justify-content:center;width:54px;flex:0 0 54px;
+    font-size:30px;color:#8a8171;font-weight:300}
+  .arrow.down{height:42px;width:100%;font-size:28px}
+  .muted{color:var(--muted)}
+  .mono{font-family:Consolas,"Cascadia Mono",monospace;font-size:14px}
+  .note{position:absolute;left:68px;right:68px;bottom:42px;font-size:14px;color:var(--muted);
+    line-height:1.5;border-top:1px solid var(--line);padding-top:12px}
+  .strip{margin-top:18px;background:#1f2328;color:#f7f5ef;border-radius:12px;padding:13px 18px;
+    font-family:Consolas,"Cascadia Mono",monospace;font-size:14px;line-height:1.55;letter-spacing:.01em}
+  .strip b{color:#f0c36b;font-weight:700}
+
+  /* d1 */
+  .pipeline{display:flex;align-items:stretch;gap:0}
+  .pipeline .box{flex:1 1 0}
+  .down-wrap{display:flex;justify-content:flex-end;padding-right:12%;height:38px;align-items:center;
+    color:#8a8171;font-size:28px}
+  .reverse{flex-direction:row}
+  .d1-bottom{display:flex;gap:18px;margin-top:18px}
+  .d1-bottom .box{flex:1}
+  .big-number{font-size:28px;font-weight:800;color:var(--amber);line-height:1.1}
+
+  /* d2 */
+  .wind-top{display:flex;align-items:stretch;margin-bottom:10px}
+  .wind-top .box{flex:1}
+  .fan{display:flex;justify-content:space-around;color:#8a8171;font-size:26px;height:34px;align-items:center}
+  .consumers{display:flex;gap:16px}
+  .consumers .box{flex:1}
+  .d2-note{margin-top:18px;display:flex;gap:16px}
+  .d2-note .box{flex:1;padding:14px 18px}
+  .d2-note h3{font-size:17px;margin-bottom:4px}
+  .d2-note p{font-size:14px}
+
+  /* d3 */
+  .d3-grid{display:grid;grid-template-columns:480px 1fr;gap:32px;align-items:start}
+  .rt-map{width:460px;height:460px;border:2px solid #9a8d74;border-radius:18px;position:relative;
+    background:
+      repeating-linear-gradient(0deg,transparent 0 24px,rgba(31,35,40,.08) 24px 25px),
+      repeating-linear-gradient(90deg,transparent 0 24px,rgba(31,35,40,.08) 24px 25px),
+      radial-gradient(circle at 50% 50%,#fffdf6 0 55%,#f1ead9 100%);
+    box-shadow:inset 0 0 0 10px rgba(255,255,255,.55),0 10px 28px rgba(31,35,40,.08)}
+  .rt-map .corner{position:absolute;font-size:13px;color:var(--muted);font-family:Consolas,monospace}
+  .player{position:absolute;left:50%;top:50%;width:18px;height:18px;border-radius:50%;background:var(--amber);
+    transform:translate(-50%,-50%);box-shadow:0 0 0 8px rgba(183,121,31,.16),0 0 0 18px rgba(183,121,31,.08)}
+  .ring{position:absolute;left:50%;top:50%;border:1.5px dashed rgba(183,121,31,.5);border-radius:50%;
+    transform:translate(-50%,-50%)}
+  .rt-label{position:absolute;font-size:13px;font-weight:700;padding:3px 8px;border-radius:6px}
+  .rg-label{left:22px;top:22px;background:#f3e3c3;color:#7a4c0b}
+  .ba-label{left:22px;bottom:22px;background:#d9eeea;color:#0b5c55}
+  .d3-flow{display:flex;flex-direction:column;gap:8px}
+  .d3-flow .box{padding:13px 16px}
+  .d3-flow h3{font-size:17px;margin-bottom:4px}
+  .d3-flow p{font-size:14px}
+  .d3-consumer-strip{margin-top:18px;background:#1f2328;color:#f7f5ef;border-radius:12px;
+    padding:13px 18px;font-size:14px;line-height:1.6}
+  .d3-consumer-strip b{color:#f0c36b}
+
+  /* d4 */
+  .stack{display:flex;flex-direction:column;gap:12px}
+  .layer{border-radius:16px;padding:16px 20px;border:1.5px solid var(--line);background:#fff;
+    box-shadow:0 8px 22px rgba(31,35,40,.05)}
+  .layer h3{font-size:19px;margin:0 0 4px;font-weight:800}
+  .layer p{font-size:15px;margin:2px 0;color:#374151}
+  .layer.atmo{background:linear-gradient(90deg,#fbfdff,#eef5fa);border-color:#b9cddd}
+  .layer.wind{background:linear-gradient(90deg,#fff9ec,#f8e8c7);border-color:#d9a441}
+  .layer.veg{display:grid;grid-template-columns:1fr 1fr;gap:14px;background:transparent;border:none;box-shadow:none;padding:0}
+  .layer.veg .inner{background:#fff;border:1.5px solid var(--line);border-radius:16px;padding:16px 20px;
+    box-shadow:0 8px 22px rgba(31,35,40,.05)}
+  .layer.world{background:linear-gradient(90deg,#f5f7f4,#e9efe6);border-color:#b9c9b0}
+  .tag{display:inline-block;font-size:13px;font-weight:700;padding:3px 8px;border-radius:6px;margin-right:6px}
+  .tag.amber{background:#f3e3c3;color:#7a4c0b}
+  .tag.teal{background:#d9eeea;color:#0b5c55}
+  .tag.blue{background:#dfe9f2;color:#244b70}
+  .d4-side{position:absolute;right:68px;top:230px;width:300px}
+  .d4-side .box{padding:16px 18px}
+  .d4-side h3{font-size:17px}
+  .d4-side p{font-size:14px}
+  .d4-bottom{display:flex;gap:12px;margin-top:16px;margin-right:330px}
+  .d4-bottom .box{flex:1;padding:12px 14px}
+  .d4-bottom h3{font-size:15px;margin-bottom:2px}
+  .d4-bottom p{font-size:13px}
+</style>
+</head>
+<body>
+
+<!-- D1 -->
+<section id="d1" class="slide d1">
+  <div class="kicker">GPU GRASS PIPELINE</div>
+  <div class="title">GPU 草叶：每帧重新生成一遍</div>
+  <div class="subtitle">CPU 只选 tile；叶数、LOD 和剔除都在 GPU 侧完成</div>
+
+  <div class="pipeline">
+    <div class="box amber">
+      <h3>1 · CPU 选 tile</h3>
+      <p>四叉树，25 m 基础 tile</p>
+      <p>距离越远，tile 逐级翻倍</p>
+      <p class="small">每升一级只保留 1/4 格</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <h3>2 · GenerateCS</h3>
+      <p>每 tile 256×256 线程</p>
+      <p>哈希 / 抖动 / LOD / 视锥剔除</p>
+      <p class="small">草种图 · 草高图 · Voronoi 簇 · 逐叶风值</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <h3>3 · FinalizeCS</h3>
+      <p>统计近 / 远叶数</p>
+      <p>写间接绘制参数</p>
+      <p class="small">两套缓冲：近层 / 远层</p>
+    </div>
+  </div>
+
+  <div class="down-wrap">↓</div>
+
+  <div class="pipeline reverse">
+    <div class="box teal">
+      <h3>6 · M_GoTGrass</h3>
+      <p>Substrate 双面</p>
+      <p>簇取色 · 沿叶长光泽 / AO</p>
+      <p class="small">叶脉 · 接触阴影 · 热力图接口</p>
+    </div>
+    <div class="arrow">←</div>
+    <div class="box">
+      <h3>5 · 自定义 Vertex Factory</h3>
+      <p>二次 Bezier，控制点受风影响</p>
+      <p>根到尖颤动 · 圆润法线 · 掠射撑宽</p>
+      <p class="small">交互位移 · 相机推开 · 运动矢量</p>
+    </div>
+    <div class="arrow">←</div>
+    <div class="box blue">
+      <h3>4 · 间接绘制</h3>
+      <p>近层 124 片 × 15 顶点</p>
+      <p>远层 136 片 × 7 顶点</p>
+      <p class="small">索引数 4836 / 2040</p>
+    </div>
+  </div>
+
+  <div class="strip"><b>每片叶 4 × float4</b>　位置/高度　·　宽度/倾斜/弯曲/草种　·　朝向/侧向偏移/风值　·　簇权重/上一帧风值/颜色/随机</div>
+
+  <div class="d1-bottom">
+    <div class="box"><div class="big-number">25 m</div><p class="small">基础 tile，逐级翻倍</p></div>
+    <div class="box"><div class="big-number">49</div><p class="small">草种，每种 236 字节</p></div>
+    <div class="box"><div class="big-number">14.6 万</div><p class="small">出生点视角单帧叶数（编辑器，FOV 90）</p></div>
+    <div class="box"><div class="big-number">200–210 m</div><p class="small">距离淡出</p></div>
+  </div>
+
+  <div class="note">近 15 / 远 7 顶点、索引 4836 / 2040 与截帧一致。草不投影，靠太阳接触阴影。GPU 生成耗时约 0.22 ms（1080p High，RTX 5060）。</div>
+</section>
+
+<!-- D2 -->
+<section id="d2" class="slide d2">
+  <div class="kicker">ONE WIND, MANY CONSUMERS</div>
+  <div class="title">统一风场：一份数据，多个消费者</div>
+  <div class="subtitle">公式只写在 GoTWindCommon.ush；GPU 草、材质、CPU 镜像共用同一套 Perlin 表</div>
+
+  <div class="wind-top">
+    <div class="box amber">
+      <h3>AGoTWindController</h3>
+      <p>关卡里唯一的调参入口</p>
+      <p class="small">风向 · 基础风力 · 阵风参数</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box">
+      <h3>UGoTWindSubsystem</h3>
+      <p>每帧更新风状态</p>
+      <p class="small">offset 平移 · z 演化 · clock 颤动 · 上一帧 Prev</p>
+    </div>
+    <div class="arrow">→</div>
+    <div class="box blue">
+      <h3>MPC_Wind</h3>
+      <p>材质参数集合</p>
+      <p class="small">WindDir · GustNoise · GustShape · WindDetailNoise · WindResponse · WindTime · Interact · 全部带 Prev</p>
+    </div>
+  </div>
+
+  <div class="fan">↓　　↓　　↓　　↓</div>
+
+  <div class="box core" style="text-align:center;padding:20px 28px">
+    <h3>GoTWindCommon.ush</h3>
+    <p class="mono">N = Perlin3D(worldXY × scale + offset.xy, z)　　force = base × (1 + gain × saturate((N × 0.5 + 0.5) × mul + add))</p>
+    <p class="mono">草 / 芒草：force' = max(0, force + base × detail × Perlin3D(细节层))　　w = coef × force' / 6600</p>
+    <p class="small">两层各自按传播速度沿风向滚动 · z 随时间演化 · 3D 改进 Perlin 同一套置换表 / 梯度表 · GPU 与材质 include 同一文件，CPU 镜像共用表</p>
+  </div>
+
+  <div class="fan" style="margin-top:12px">↓　　　↓　　　↓　　　↓</div>
+
+  <div class="consumers">
+    <div class="box">
+      <h3>GPU 草</h3>
+      <p>GenerateCS 逐叶算</p>
+      <p class="mono">w = kind[200] · force' / 6600</p>
+      <p class="small">VS 再叠根到尖颤动</p>
+    </div>
+    <div class="box teal">
+      <h3>MF_GoTWind</h3>
+      <p>芒草 / 树在实例根部采样</p>
+      <p class="small">芒草：圆弧中心线弯曲，总弯角 80°；树：根部旋转 4°</p>
+    </div>
+    <div class="box blue">
+      <h3>CPU 镜像</h3>
+      <p><span class="mono">GoTWindNoise::</span></p>
+      <p class="small">同一套表 · 运动矢量 · 调试查询</p>
+    </div>
+    <div class="box">
+      <h3>MF_GoTWindDebug</h3>
+      <p>GustNoise / BladeResponse</p>
+      <p>DetailNoise / CombinedWind</p>
+      <p class="small">把风画成可检查的热力图</p>
+    </div>
+  </div>
+
+  <div class="d2-note">
+    <div class="box"><h3>一份公式</h3><p>避免草、芒草、树的阵风相位各算各的。</p></div>
+    <div class="box"><h3>一张表</h3><p>Ken Perlin 标准置换 / 梯度表，CPU 与 GPU 共用。</p></div>
+    <div class="box"><h3>一组 Prev</h3><p>上一帧 offset / z / clock 保留，草叶运动矢量按真实上一帧重算。</p></div>
+  </div>
+
+  <div class="note">交互场 RT_GoTInteraction 是另一条数据流：RG 存位移，BA 存 vorticle 风，草与芒草在根部或叶高采样。</div>
+</section>
+
+<!-- D3 -->
+<section id="d3" class="slide d3">
+  <div class="kicker">INTERACTION FIELD</div>
+  <div class="title">交互场：一张 RT 同时存位移和风</div>
+  <div class="subtitle">100 m × 100 m，256² RGBA16F，以玩家为中心并按纹素对齐</div>
+
+  <div class="d3-grid">
+    <div>
+      <div class="rt-map">
+        <div class="corner" style="right:14px;top:14px">100 m</div>
+        <div class="corner" style="right:14px;bottom:14px">256²</div>
+        <div class="rt-label rg-label">RG · 位移</div>
+        <div class="rt-label ba-label">BA · vorticle 风</div>
+        <div class="ring" style="width:160px;height:160px"></div>
+        <div class="ring" style="width:300px;height:300px"></div>
+        <div class="player"></div>
+      </div>
+      <div class="note" style="position:static;border:none;padding:12px 0 0;margin:0">
+        玩家每走 30 cm 留下一个轨迹点；轨迹点按阻尼波衰减，脚下保留实时脚印。
+      </div>
+    </div>
+
+    <div class="d3-flow">
+      <div class="box amber">
+        <h3>轨迹点</h3>
+        <p>每 30 cm 一个 · 生命 3.2 s</p>
+        <p class="small">位置 · 方向 · 半径 · 年龄 · 强度</p>
+      </div>
+      <div class="arrow down" style="width:100%">↓</div>
+      <div class="box">
+        <h3>阻尼波</h3>
+        <p class="mono">A · e^(−1.5t) · cos(6t)</p>
+        <p class="small">不是线性弹回；离角色越远，余震越小</p>
+      </div>
+      <div class="arrow down" style="width:100%">↓</div>
+      <div class="box blue">
+        <h3>GoTWindField.usf</h3>
+        <p>每帧一次 compute pass</p>
+        <p class="small">位移 + vorticle 暴力求和 → RGBA16F</p>
+      </div>
+      <div class="arrow down" style="width:100%">↓</div>
+      <div class="box teal">
+        <h3>RT_GoTInteraction</h3>
+        <p>RG：推开方向 × 强度</p>
+        <p>BA：vorticle 风速（cm/s）</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="d3-consumer-strip"><b>消费者</b>　草 VS：叶高 12.5% / 65% 两处双三次采样，结果 ×6.5　·　芒草 / 树：只在根部采样，把位移换成额外转角　·　调试材质：品红显示位移痕迹</div>
+
+  <div class="note">相机推开：强度 70092.8，指数 −1.5；z 方向相机下方 ×1.5、上方 ×0.1，避免草叶糊在镜头上。</div>
+</section>
+
+<!-- D4 -->
+<section id="d4" class="slide d4">
+  <div class="kicker">SCENE OVERVIEW</div>
+  <div class="title">草地渲染 × 统一风场 × 大世界</div>
+  <div class="subtitle">一张约 1 km 见方的地图，三层植被，一份风</div>
+
+  <div class="stack" style="margin-right:330px">
+    <div class="layer atmo">
+      <h3>氛围</h3>
+      <p>SkyAtmosphere · VolumetricCloud · ExponentialHeightFog · SkyLight · 固定 EV100 14.2 · Local Exposure</p>
+    </div>
+    <div class="layer wind">
+      <h3>统一风场 + 交互场</h3>
+      <p>GoTWindCommon.ush 一份公式 → GPU 草 / 芒草 / 树 / 调试；RT_GoTInteraction 叠角色影响</p>
+    </div>
+    <div class="layer veg">
+      <div class="inner">
+        <h3><span class="tag amber">PCG</span>芒草 + 枫树</h3>
+        <p>约 47 万芒草实例 · 900 棵 Nanite 枫树</p>
+        <p class="small">近层 35.4 万：投影，40 m 淡出；远层 11.6 万：不投影，画到 1 km；远处进 HLOD</p>
+      </div>
+      <div class="inner">
+        <h3><span class="tag teal">GPU</span>程序化草叶</h3>
+        <p>每帧生成 · 近 15 / 远 7 顶点</p>
+        <p class="small">25 m tile · 49 种草 · 200–210 m 淡出 · 逐叶风值</p>
+      </div>
+    </div>
+    <div class="layer world">
+      <h3>地形 · World Partition · HLOD</h3>
+      <p>1009×1009 高度图 · 16 个流式分块 · 约 1 km 见方</p>
+      <p class="small">编辑器 Pampas_EditorLoadAll 全加载；运行时按网格流式加载</p>
+    </div>
+  </div>
+
+  <div class="d4-bottom">
+    <div class="box"><h3>单一事实源</h3><p>一份公式 / 一套表</p></div>
+    <div class="box"><h3>GPU 生成</h3><p>叶数 / LOD / 剔除在 GPU 侧</p></div>
+    <div class="box"><h3>交互复用</h3><p>一张 RT 服务草、芒草、树</p></div>
+    <div class="box"><h3>调试可视化</h3><p>热力图让风可检查</p></div>
+  </div>
+
+  <div class="d4-side">
+    <div class="box teal">
+      <h3>三层植被</h3>
+      <p>近景：芒草穗 + GPU 草叶</p>
+      <p>中景：PCG 芒草 + 枫树</p>
+      <p>远景：地表贴图 + HLOD</p>
+    </div>
+    <div class="box" style="margin-top:14px">
+      <h3>四种热力图</h3>
+      <p>GustNoise：主阵风噪声</p>
+      <p>BladeResponse：草叶直立程度</p>
+      <p>DetailNoise：细节层强度</p>
+      <p>CombinedWind：净风速</p>
+    </div>
+    <div class="box amber" style="margin-top:14px">
+      <h3>一条主线</h3>
+      <p>风只算一次，草、芒草、树和交互都从同一份数据取值。</p>
+    </div>
+  </div>
+
+  <div class="note">PCG 负责美术资产与分布，GPU 草负责地面密度与逐叶响应；两者叠在一起，才有完整的原野尺度。</div>
+</section>
+
+<script>
+  const q = new URLSearchParams(location.search);
+  const id = 'd' + (q.get('d') || '1');
+  document.getElementById(id).classList.add('active');
+</script>
+</body>
+</html>

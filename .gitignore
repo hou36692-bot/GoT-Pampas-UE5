@@ -1,0 +1,50 @@
+# Unreal Engine build output and caches
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
+*.VC.db
+*.opensdf
+*.sdf
+
+# Unreal content is not distributed (it contains research assets derived from the game)
+Content/**
+!Content/Python/
+!Content/Python/init_unreal.py
+*.uasset
+*.umap
+
+# Captures, extracted game data and binaries never belong here
+*.pix
+*.wpix
+*.rdc
+*.dxil
+*.dxbc
+*.bin
+*.psarc
+*.dsar
+*.xmesh
+*.sps
+*.zip
+*.7z
+*.exe
+*.dll
+*.pdb
+
+# Raw media (only the curated docs/media files are committed)
+docs/media/_raw/
+*.mp4
+*.mov
+
+# Python / OS noise
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+desktop.ini
+.env

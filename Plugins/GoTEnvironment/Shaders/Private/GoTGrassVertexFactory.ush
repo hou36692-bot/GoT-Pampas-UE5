@@ -1,0 +1,322 @@
+// GoT grass vertex factory: draws the blades written by GoTGrassGen.usf (no vertex buffers).
+// VertexId -> (blade, vertex in blade), the blade record is read from a structured buffer and the vertex
+// is evaluated with GoTEvaluateBlade (transcribed captured VS). Material passes (depth, base, velocity)
+// get the Bezier-derived normal and these texture coordinates:
+//   UV0 = (across 0..1, along t 0..1)   UV1 = (blade random, colour tier 0/1)   UV2 = (cluster weight, kind)
+//   UV3 = world XY in metres (for terrain colour lookups)
+#include "/Engine/Private/VertexFactoryCommon.ush"
+#include "/Plugin/GoTEnvironment/Private/GoTGrassCommon.ush"
+
+#undef GetInstanceIdFromVF
+#define GetInstanceIdFromVF(VFInput) (VFInput.InstanceId)
+
+struct FVertexFactoryInput
+{
+	uint InstanceId : SV_InstanceID;
+	uint VertexId : SV_VertexID;
+	VF_MOBILE_MULTI_VIEW_DECLARE_INPUT_BLOCK()
+};
+
+struct FVertexFactoryIntermediates
+{
+	float3 RelPos;
+	float3 Normal;
+	float3 Tangent;
+	float4 UV01;
+	float4 UV23;
+	uint BladeIndex;
+	uint VertexInBlade;
+	bool bValid;
+	FSceneDataIntermediates SceneData;
+};
+
+FPrimitiveSceneData GetPrimitiveData(FVertexFactoryIntermediates Intermediates)
+{
+	return Intermediates.SceneData.Primitive;
+}
+
+struct FVertexFactoryInterpolantsVSToPS
+{
+	TANGENTTOWORLD_INTERPOLATOR_BLOCK
+#if NUM_TEX_COORD_INTERPOLATORS
+	float4 TexCoords[(NUM_TEX_COORD_INTERPOLATORS + 1) / 2] : TEXCOORD0;
+#endif
+};
+
+#if NUM_TEX_COORD_INTERPOLATORS
+float2 GetUV(FVertexFactoryInterpolantsVSToPS Interpolants, int UVIndex)
+{
+	float4 UVVector = Interpolants.TexCoords[UVIndex / 2];
+	return UVIndex % 2 ? UVVector.zw : UVVector.xy;
+}
+
+void SetUV(inout FVertexFactoryInterpolantsVSToPS Interpolants, int UVIndex, float2 InValue)
+{
+	FLATTEN
+	if (UVIndex % 2)
+	{
+		Interpolants.TexCoords[UVIndex / 2].zw = InValue;
+	}
+	else
+	{
+		Interpolants.TexCoords[UVIndex / 2].xy = InValue;
+	}
+}
+#endif
+
+FGoTBladeKind GoTLoadKind(uint Kind)
+{
+	const uint Base = Kind * GOT_GRASS_KIND_FLOATS;
+	FGoTBladeKind K;
+	K.CtrlRatio = GoTGrassVF.Kinds[Base + 108 / 4];
+	K.TMin = GoTGrassVF.Kinds[Base + 168 / 4];
+	K.TMax = GoTGrassVF.Kinds[Base + 172 / 4];
+	K.WindSteer = GoTGrassVF.Kinds[Base + 204 / 4];
+	K.FlutterFreq = GoTGrassVF.Kinds[Base + 208 / 4];
+	K.PushTilt = GoTGrassVF.Kinds[Base + 216 / 4];
+	K.PushTurn = GoTGrassVF.Kinds[Base + 220 / 4];
+	return K;
+}
+
+FGoTBladeFrame GoTLoadFrame(bool bPrevious)
+{
+	FGoTBladeFrame Fr;
+	Fr.Time = bPrevious ? GoTGrassVF.WindTime.y : GoTGrassVF.WindTime.x;
+	Fr.BaseSpeed = bPrevious ? GoTGrassVF.WindTime.w : GoTGrassVF.WindTime.z;
+	Fr.FlutterStrength = bPrevious ? GoTGrassVF.FlutterStrength.y : GoTGrassVF.FlutterStrength.x;
+	const float4 WindDirAndDisp = bPrevious ? GoTGrassVF.WindDirAndDispPrev : GoTGrassVF.WindDirAndDisp;
+	const float4 DispCenterSize = bPrevious ? GoTGrassVF.DispCenterSizePrev : GoTGrassVF.DispCenterSize;
+	Fr.WindDir = WindDirAndDisp.xy;
+	Fr.WindValue = 0;
+	Fr.WindDeflectionAngle = 0;
+	Fr.LodMorph = GoTGrassVF.LodMorph;
+	Fr.Grazing = GoTGrassVF.Grazing;
+	Fr.DispCenter = DispCenterSize.xy;
+	Fr.DispInvSize = DispCenterSize.z;
+	Fr.DispRes = DispCenterSize.w;
+	Fr.DispScale = WindDirAndDisp.z;
+	Fr.DispEnabled = WindDirAndDisp.w;
+	Fr.Push = bPrevious ? GoTGrassVF.PushPrev : GoTGrassVF.Push;
+	Fr.PushZ = bPrevious ? GoTGrassVF.PushZPrev : GoTGrassVF.PushZ;
+	return Fr;
+}
+
+FGoTBladeVertex GoTEvaluateVertex(uint BladeIndex, uint V, bool bPrevious)
+{
+	const float4 B0 = GoTGrassVF.Blades[BladeIndex * 4 + 0];
+	const float4 B1 = GoTGrassVF.Blades[BladeIndex * 4 + 1];
+	float4 B2 = GoTGrassVF.Blades[BladeIndex * 4 + 2];
+	const float4 B3 = GoTGrassVF.Blades[BladeIndex * 4 + 3];
+	const float4 Motion = GoTGrassVF.WindMotion[BladeIndex];
+	FGoTBladeFrame Fr = GoTLoadFrame(bPrevious);
+	Fr.WindValue = bPrevious ? (B2.w < 0 ? -B3.y : B3.y) : B2.w;
+	Fr.WindDeflectionAngle = bPrevious ? Motion.w : Motion.z;
+	if (bPrevious) B2.xy = Motion.xy;
+	const FGoTBladeKind K = GoTLoadKind((uint)B1.w);
+	if (bPrevious)
+	{
+		return GoTEvaluateBlade(B0, B1, B2, B3, V, GoTGrassVF.Layout.w, K, Fr, GoTGrassVF.DispTexturePrev, GoTGrassVF.DispSampler);
+	}
+	return GoTEvaluateBlade(B0, B1, B2, B3, V, GoTGrassVF.Layout.w, K, Fr, GoTGrassVF.DispTexture, GoTGrassVF.DispSampler);
+}
+
+FVertexFactoryIntermediates GetVertexFactoryIntermediates(FVertexFactoryInput Input)
+{
+	FVertexFactoryIntermediates Intermediates = (FVertexFactoryIntermediates)0;
+	Intermediates.SceneData = VF_GPUSCENE_GET_INTERMEDIATES(Input);
+
+	const uint VertsPerBlade = GoTGrassVF.Layout.x;
+	const uint BladesPerInstance = GoTGrassVF.Layout.y;
+	const uint LocalBlade = Input.VertexId / VertsPerBlade;
+	Intermediates.VertexInBlade = Input.VertexId - LocalBlade * VertsPerBlade;
+	Intermediates.BladeIndex = Input.InstanceId * BladesPerInstance + LocalBlade;
+	const uint Count = min(GoTGrassVF.Counters[GoTGrassVF.Layout.z], GoTGrassVF.Capacity);
+	Intermediates.bValid = Intermediates.BladeIndex < Count;
+	Intermediates.Normal = float3(0, 0, 1);
+	Intermediates.Tangent = float3(1, 0, 0);
+	if (Intermediates.bValid)
+	{
+		const FGoTBladeVertex O = GoTEvaluateVertex(Intermediates.BladeIndex, Intermediates.VertexInBlade, false);
+		const float4 B1 = GoTGrassVF.Blades[Intermediates.BladeIndex * 4 + 1];
+		const float4 B3 = GoTGrassVF.Blades[Intermediates.BladeIndex * 4 + 3];
+		Intermediates.RelPos = O.Pos;
+		Intermediates.Normal = normalize(O.Normal);
+		if (GoTGrassVF.ClumpNormalBlend.z > 0.0)
+		{
+			const float3 ClumpNormal = GoTDecodeNormalOct16(GoTGrassVF.ClumpNormals[Intermediates.BladeIndex]);
+			Intermediates.Normal = GoTBlendClumpNormal(Intermediates.Normal, O.UnroundedNormal, ClumpNormal,
+				length(GoTGrassVF.Blades[Intermediates.BladeIndex * 4 + 0].xyz), GoTGrassVF.ClumpNormalBlend);
+		}
+		Intermediates.Tangent = O.Tangent;
+		Intermediates.UV01 = float4(O.Side * 0.5 + 0.5, O.T, B3.w, B3.z > 0.5 ? 1.0 : 0.0);
+		// TexCoord3 = (height above the root / blade length, 0 root .. 1 tip): the heatmap's blade-response view.
+		const float BladeL = max(GoTGrassVF.Blades[Intermediates.BladeIndex * 4 + 0].w * 170.0, 1e-3);
+		const float Rise = (O.Pos.z - GoTGrassVF.Blades[Intermediates.BladeIndex * 4 + 0].z) / BladeL;
+		Intermediates.UV23 = float4(B3.x, B1.w, Rise, O.T);
+	}
+	return Intermediates;
+}
+
+half3x3 GoTTangentToWorld(FVertexFactoryIntermediates Intermediates)
+{
+	// 新照明法线确定后重新正交化 TBN；单叶几何和上一帧位置求值仍走原函数。
+	const float3 N = Intermediates.Normal;
+	float3 X = Intermediates.Tangent - N * dot(Intermediates.Tangent, N);
+	X *= rsqrt(max(dot(X, X), 1e-12));
+	const float3 Y = cross(N, X);
+	return half3x3(X, Y, N);
+}
+
+float3 VertexFactoryGetPreviousInstanceSpacePosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates);
+float3 VertexFactoryGetInstanceSpacePosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates);
+
+FMaterialVertexParameters GetMaterialVertexParameters(
+	FVertexFactoryInput Input,
+	FVertexFactoryIntermediates Intermediates,
+	float3 WorldPosition,
+	half3x3 TangentToLocal,
+	bool bIsPreviousFrame = false)
+{
+	FMaterialVertexParameters Result = MakeInitializedMaterialVertexParameters();
+	Result.SceneData = Intermediates.SceneData;
+	Result.WorldPosition = WorldPosition;
+	if (bIsPreviousFrame)
+	{
+		Result.PositionInstanceSpace = VertexFactoryGetPreviousInstanceSpacePosition(Input, Intermediates);
+	}
+	else
+	{
+		Result.PositionInstanceSpace = VertexFactoryGetInstanceSpacePosition(Input, Intermediates);
+	}
+	Result.PositionPrimitiveSpace = Result.PositionInstanceSpace;
+	Result.TangentToWorld = GoTTangentToWorld(Intermediates);
+	Result.PreSkinnedPosition = Intermediates.RelPos;
+	Result.PreSkinnedNormal = Intermediates.Normal;
+	Result.VertexColor = 1;
+#if NUM_MATERIAL_TEXCOORDS_VERTEX
+	Result.TexCoords[0] = Intermediates.UV01.xy;
+	#if NUM_MATERIAL_TEXCOORDS_VERTEX > 1
+	Result.TexCoords[1] = Intermediates.UV01.zw;
+	#endif
+	#if NUM_MATERIAL_TEXCOORDS_VERTEX > 2
+	Result.TexCoords[2] = Intermediates.UV23.xy;
+	#endif
+	#if NUM_MATERIAL_TEXCOORDS_VERTEX > 3
+	Result.TexCoords[3] = Intermediates.UV23.zw;
+	#endif
+#endif
+	Result.LWCData = MakeMaterialLWCData(Result);
+	return Result;
+}
+
+uint GetPrimitiveId(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	return 0;
+}
+
+uint VertexFactoryGetPrimitiveId(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	return 0;
+}
+
+float4 VertexFactoryGetWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	// [适配] blades are stored relative to the generation origin (the capture uses the camera); translated world here
+	return float4(DFFastToTranslatedWorld(GoTGrassVF.Origin + Intermediates.RelPos, ResolvedView.PreViewTranslation), 1);
+}
+
+float3 VertexFactoryGetInstanceSpacePosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return Intermediates.RelPos;
+}
+
+float4 VertexFactoryGetRasterizedWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates, float4 InWorldPosition)
+{
+	return InWorldPosition;
+}
+
+float3 VertexFactoryGetPositionForVertexLighting(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates, float3 TranslatedWorldPosition)
+{
+	return TranslatedWorldPosition;
+}
+
+float3 GoTPreviousRelPos(FVertexFactoryIntermediates Intermediates)
+{
+	if (!Intermediates.bValid)
+	{
+		return Intermediates.RelPos;
+	}
+	return GoTEvaluateVertex(Intermediates.BladeIndex, Intermediates.VertexInBlade, true).Pos;
+}
+
+float4 VertexFactoryGetPreviousWorldPosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return float4(DFFastToTranslatedWorld(GoTGrassVF.Origin + GoTPreviousRelPos(Intermediates), ResolvedView.PrevPreViewTranslation), 1);
+}
+
+float3 VertexFactoryGetPreviousInstanceSpacePosition(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return GoTPreviousRelPos(Intermediates);
+}
+
+float3 VertexFactoryGetWorldNormal(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return Intermediates.Normal;
+}
+
+half3x3 VertexFactoryGetTangentToLocal(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates)
+{
+	return GoTTangentToWorld(Intermediates);
+}
+
+float4 VertexFactoryGetTranslatedPrimitiveVolumeBounds(FVertexFactoryInterpolantsVSToPS Interpolants)
+{
+	return 0;
+}
+
+FVertexFactoryInterpolantsVSToPS VertexFactoryGetInterpolantsVSToPS(FVertexFactoryInput Input, FVertexFactoryIntermediates Intermediates, FMaterialVertexParameters VertexParameters)
+{
+	FVertexFactoryInterpolantsVSToPS Interpolants = (FVertexFactoryInterpolantsVSToPS)0;
+#if NUM_TEX_COORD_INTERPOLATORS
+	float2 CustomizedUVs[NUM_TEX_COORD_INTERPOLATORS];
+	GetMaterialCustomizedUVs(VertexParameters, CustomizedUVs);
+	GetCustomInterpolators(VertexParameters, CustomizedUVs);
+	UNROLL
+	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; CoordinateIndex++)
+	{
+		SetUV(Interpolants, CoordinateIndex, CustomizedUVs[CoordinateIndex]);
+	}
+#endif
+	const half3x3 TangentToWorld = GoTTangentToWorld(Intermediates);
+	Interpolants.TangentToWorld0 = float4(TangentToWorld[0], 0);
+	Interpolants.TangentToWorld2 = float4(TangentToWorld[2], 1);
+#if USE_WORLDVERTEXNORMAL_CENTER_INTERPOLATION
+	Interpolants.TangentToWorld2_Center = Interpolants.TangentToWorld2;
+#endif
+	return Interpolants;
+}
+
+FMaterialPixelParameters GetMaterialPixelParameters(FVertexFactoryInterpolantsVSToPS Interpolants, float4 SvPosition)
+{
+	FMaterialPixelParameters Result = MakeInitializedMaterialPixelParameters();
+#if NUM_TEX_COORD_INTERPOLATORS
+	UNROLL
+	for (int CoordinateIndex = 0; CoordinateIndex < NUM_TEX_COORD_INTERPOLATORS; CoordinateIndex++)
+	{
+		Result.TexCoords[CoordinateIndex] = GetUV(Interpolants, CoordinateIndex);
+	}
+#endif
+	half3 TangentToWorld0 = Interpolants.TangentToWorld0.xyz;
+	half4 TangentToWorld2 = Interpolants.TangentToWorld2;
+	Result.TangentToWorld = AssembleTangentToWorld(TangentToWorld0, TangentToWorld2);
+#if USE_WORLDVERTEXNORMAL_CENTER_INTERPOLATION
+	Result.WorldVertexNormal_Center = Interpolants.TangentToWorld2_Center.xyz;
+#endif
+	Result.UnMirrored = 1;
+	Result.VertexColor = 1;
+	Result.TwoSidedSign = 1;
+	Result.PrimitiveId = 0;
+	return Result;
+}
+
+#include "/Engine/Private/VertexFactoryDefaultInterface.ush"

@@ -1,0 +1,65 @@
+// GoT interaction / vorticle field (compute), written every frame into RT_GoTInteraction.
+//   RG = grass displacement from trail particles  [官方 W3: particles drive the grass displacement, strength x damped wave]
+//   BA = vorticle wind (cm/s), brute-force sum over all vorticles  [官方 W1 p9-10: consumers sum every vorticle]
+// Field: square of FieldSize cm centred on the player, read by the grass VS (bicubic, 2 heights per blade),
+// the grass CS (vorticle force) and MF_GoTWind (pampas, trees).
+#include "/Engine/Private/Common.ush"
+
+StructuredBuffer<float4> Particles;     // 2 per particle: (x, y, age s, radius cm), (strength, 0, 0, 0)
+uint NumParticles;
+StructuredBuffer<float4> Vorticles;     // 2 per vorticle: (x, y, radius cm, fade 0..1), (wind x, wind y cm/s, 0, 0)
+uint NumVorticles;
+float4 FieldCenterSize;                 // (centre x, centre y, size cm, resolution)
+float4 Wave;                            // (decay lambda, angular frequency omega, normalisation, 0)
+RWTexture2D<float4> RWField;
+
+float Smooth(float R2)
+{
+	const float T = 1.0 - R2;
+	return T * T;
+}
+
+[numthreads(8, 8, 1)]
+void FieldCS(uint3 Id : SV_DispatchThreadID)
+{
+	const float Res = FieldCenterSize.w;
+	if (Id.x >= (uint)Res || Id.y >= (uint)Res)
+	{
+		return;
+	}
+	const float Texel = FieldCenterSize.z / Res;
+	const float2 P = FieldCenterSize.xy + (float2(Id.xy) + 0.5 - Res * 0.5) * Texel;
+
+	float2 Push = 0;
+	for (uint I = 0; I < NumParticles; ++I)
+	{
+		const float4 A = Particles[I * 2 + 0];
+		const float4 B = Particles[I * 2 + 1];
+		const float2 D = P - A.xy;
+		const float R2 = dot(D, D) / (A.w * A.w);
+		if (R2 < 1.0)
+		{
+			const float Age = A.z;
+			// A e^(-lambda t) cos(omega t): pushed down, then swings back and settles
+			const float Damped = exp(-Wave.x * Age) * cos(Wave.y * Age);
+			const float2 Away = dot(D, D) > 1.0 ? normalize(D) : float2(0, 0);
+			Push += Away * (B.x * Damped * Smooth(R2));
+		}
+	}
+	float2 Wind = 0;
+	for (uint J = 0; J < NumVorticles; ++J)
+	{
+		const float4 A = Vorticles[J * 2 + 0];
+		const float4 B = Vorticles[J * 2 + 1];
+		const float2 D = P - A.xy;
+		const float R2 = dot(D, D) / (A.z * A.z);
+		if (R2 < 1.0)
+		{
+			Wind += B.xy * (A.w * Smooth(R2));
+		}
+	}
+	const float PushLen = length(Push);
+	Push *= PushLen > 1.0 ? 1.0 / PushLen : 1.0;
+	// RGBA16F 有限范围保护；CPU 四 texel 镜像采用同一钳制后 Half 量化。
+	RWField[Id.xy] = float4(Push, clamp(Wind, -60000.0, 60000.0));
+}

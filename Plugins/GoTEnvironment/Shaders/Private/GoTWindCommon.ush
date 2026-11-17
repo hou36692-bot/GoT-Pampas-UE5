@@ -1,0 +1,170 @@
+// GoT unified wind: functions shared by the grass compute shaders, the grass vertex factory and the
+// material Custom nodes (MF_GoTWind includes this file). One implementation, one set of constants.
+//
+// Evidence (see HANDOFF.md section 3 / Captures/analysis/shaders_02/grass_gen.pretty.txt):
+//  [截帧] gust = improved 3D Perlin noise at (worldXY * scale + offset.xy, z), scale = 0.0004 / cm
+//  [截帧] force = base + base * gain * saturate((noise * 0.5 + 0.5) * mul + add), base = 1500 (cm/s)
+//  [截帧] per-blade wind = kind[200] * force / 6600
+//  [适配] 各层按独立传播速度滚动；捕获样本数值曾与基础风力相同，z 增长 ~0.049 / s
+#pragma once
+
+#include "/Plugin/GoTEnvironment/Private/GoTPerlinTables.ush"
+
+#define GOT_WIND_NORMALIZER (1.0 / 6600.0)
+
+// 局部场 RG/BA 使用同一边缘衰减；Transform=(世界中心 xy、1/尺寸、enabled)。
+float GoTWindFieldEdge(float2 UV)
+{
+	const float2 Edge = saturate((0.5 - abs(UV - 0.5)) * 16.0);
+	return Edge.x * Edge.y;
+}
+
+float4 GoTSampleWindField(Texture2D<float4> Field, SamplerState Samp, float2 WorldXY, float4 Transform)
+{
+	if (Transform.w <= 0.0 || Transform.z <= 0.0) return 0;
+	const float2 UV = (WorldXY - Transform.xy) * Transform.z + 0.5;
+	return Field.SampleLevel(Samp, UV, 0) * (GoTWindFieldEdge(UV) * Transform.w);
+}
+
+// [适配] 保留有符号向量相消；DeflectionAngle 仅用于风增弯，不改变静态朝向或 idle。
+float2 GoTComposeWind(float2 MainDir, float Force, float2 LocalVelocity, float LocalScale, out float Speed, out float DeflectionAngle)
+{
+	const float2 Local = LocalVelocity * LocalScale;
+	if (Local.x == 0.0 && Local.y == 0.0)
+	{
+		Speed = Force;
+		DeflectionAngle = 0.0;
+		return MainDir * Force;
+	}
+	const float2 Net = MainDir * Force + Local;
+	Speed = length(Net);
+	DeflectionAngle = 0.0;
+	if (Speed <= 1e-4)
+	{
+		Speed = 0.0;
+		return 0;
+	}
+	DeflectionAngle = atan2(MainDir.x * Net.y - MainDir.y * Net.x, dot(MainDir, Net));
+	return Net;
+}
+
+// 返回 xy 合弯向量和 z=原 saturate(Idle+WindValue)；近零净风不旋转 idle。
+float3 GoTBuildWindBend(float2 Facing, float Idle, float WindValue, float DeflectionAngle)
+{
+	const float Total = Idle + WindValue;
+	const float W = saturate(Total);
+	if (DeflectionAngle == 0.0) return float3(Facing * W, W);
+	if (Total <= 0.0) return 0;
+	const float C = cos(DeflectionAngle), S = sin(DeflectionAngle);
+	const float2 Rotated = float2(Facing.x * C - Facing.y * S, Facing.x * S + Facing.y * C);
+	return float3((Facing * Idle + Rotated * WindValue) * (W / Total), W);
+}
+
+int GoTPerm(int i)
+{
+	return GoTPerlinPerm[i & 255];
+}
+
+float GoTGradDot(int Hash, float3 P)
+{
+	return dot(GoTPerlinGrad[Hash & 31], P);
+}
+
+// Improved Perlin noise (Ken Perlin 2002), structure as in the captured shader: fade 6t^5-15t^4+10t^3,
+// A = perm[X]+Y, AA = perm[A]+Z ... gradient index = perm[..] & 31 into the 32-entry table. Range about [-1, 1].
+float GoTPerlin3D(float3 P)
+{
+	const float3 Fl = floor(P);
+	const int X = (int)Fl.x;
+	const int Y = (int)Fl.y;
+	const int Z = (int)Fl.z;
+	const float3 F = P - Fl;
+	const float3 U = F * F * F * (F * (F * 6.0 - 15.0) + 10.0);
+
+	const int A  = GoTPerm(X) + Y;
+	const int B  = GoTPerm(X + 1) + Y;
+	const int AA = GoTPerm(A) + Z;
+	const int AB = GoTPerm(A + 1) + Z;
+	const int BA = GoTPerm(B) + Z;
+	const int BB = GoTPerm(B + 1) + Z;
+
+	const float G000 = GoTGradDot(GoTPerm(AA),     F);
+	const float G100 = GoTGradDot(GoTPerm(BA),     F - float3(1, 0, 0));
+	const float G010 = GoTGradDot(GoTPerm(AB),     F - float3(0, 1, 0));
+	const float G110 = GoTGradDot(GoTPerm(BB),     F - float3(1, 1, 0));
+	const float G001 = GoTGradDot(GoTPerm(AA + 1), F - float3(0, 0, 1));
+	const float G101 = GoTGradDot(GoTPerm(BA + 1), F - float3(1, 0, 1));
+	const float G011 = GoTGradDot(GoTPerm(AB + 1), F - float3(0, 1, 1));
+	const float G111 = GoTGradDot(GoTPerm(BB + 1), F - float3(1, 1, 1));
+
+	const float X00 = lerp(G000, G100, U.x);
+	const float X10 = lerp(G010, G110, U.x);
+	const float X01 = lerp(G001, G101, U.x);
+	const float X11 = lerp(G011, G111, U.x);
+	const float Y0 = lerp(X00, X10, U.y);
+	const float Y1 = lerp(X01, X11, U.y);
+	return lerp(Y0, Y1, U.z);
+}
+
+// Noise = (offset.x, offset.y, z, scale), Shape = (base force, gain, mul, add). Returns the wind force (cm/s units).
+float GoTGustForce(float2 WorldXY, float4 Noise, float4 Shape)
+{
+	const float N = GoTPerlin3D(float3(WorldXY * Noise.w + Noise.xy, Noise.z));
+	const float S = saturate((N * 0.5 + 0.5) * Shape.z + Shape.w);
+	return Shape.x + Shape.x * S * Shape.y;
+}
+
+// [官方] 草地演讲 12:40 提到额外 Perlin；[适配] 尺度、独立种子和有符号加法由 UE 设定。
+// 草和芒草按真实位置共享细节。强度 0 恢复主风公式，树继续只调用 GoTGustForce。
+float GoTGrassGustForce(float2 WorldXY, float4 MacroNoise, float4 MacroShape, float4 DetailNoise, float DetailStrength)
+{
+	const float Force = GoTGustForce(WorldXY, MacroNoise, MacroShape);
+	if (DetailStrength <= 0.0)
+	{
+		return Force;
+	}
+	const float Detail = GoTPerlin3D(float3(WorldXY * DetailNoise.w + DetailNoise.xy, DetailNoise.z));
+	return max(0.0, Force + MacroShape.x * DetailStrength * Detail);
+}
+
+// 0 = calm (base force), 1 = full gust (base * (1 + gain)). For debug views.
+float GoTGustAmount(float2 WorldXY, float4 Noise, float4 Shape)
+{
+	const float N = GoTPerlin3D(float3(WorldXY * Noise.w + Noise.xy, Noise.z));
+	return saturate((N * 0.5 + 0.5) * Shape.z + Shape.w);
+}
+
+// [截帧] Four stable per-cell randoms used by the grass generator ("golden ratio x mod 71" hash).
+// 仅用于逐叶整数 cell；簇 Feature 直接 mod 71，不能再乘黄金比例。
+float4 GoTHash71x4(float2 C)
+{
+	const float2 G = C * 0.618034;
+	const float2 M = C * 0.0087047;              // 0.618034 / 71
+	const float2 A0 = G - floor(M) * 71.0;       // (c * phi) mod 71
+	const float2 A1 = G + 1.0 - floor(M + 0.0140845) * 71.0;   // (c * phi + 1) mod 71
+	const float X0 = A0.x + 26.0, X1 = A1.x + 26.0;
+	const float Y0 = A0.y + 161.0, Y1 = A1.y + 161.0;
+	const float K = 0.00105137;
+	const float X0s = X0 * X0 * K, X1s = X1 * X1 * K;
+	return frac(float4(X0s * (Y0 * Y0), (Y0 * Y0) * K * (X1 * X1), X0s * (Y1 * Y1), X1s * (Y1 * Y1)));
+}
+
+float GoTSinHash(float2 C)
+{
+	return frac(sin(dot(C, float2(12.9898, 78.233))) * 43758.5);
+}
+
+// [截帧] grass CS %882-%918：Feature 直接 mod 71；完整常量取自原 DXIL 的 float32 值。
+float4 GoTClusterHash71x4(float2 Feature)
+{
+	const float Inv71 = 0.014084506779909134;
+	const float K = 0.0010513747110962868;
+	const float2 Next = Feature + 1.0;
+	const float2 A0 = Feature - floor(Feature * Inv71) * 71.0;
+	const float2 A1 = Next - floor(Next * Inv71) * 71.0;
+	const float X0 = A0.x + 26.0, X1 = A1.x + 26.0;
+	const float Y0 = A0.y + 161.0, Y1 = A1.y + 161.0;
+	precise float4 R = float4((X0 * X0) * K * (Y0 * Y0), (Y0 * Y0) * K * (X1 * X1),
+		(X0 * X0) * K * (Y1 * Y1), (X1 * X1) * K * (Y1 * Y1));
+	return frac(R);
+}

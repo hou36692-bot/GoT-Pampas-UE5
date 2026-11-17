@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "0.1",
+	"FriendlyName": "GoT Environment",
+	"Description": "Unified wind (3D Perlin gusts, vorticles, GPU interaction field) and GPU-generated Bezier grass for the Ghost of Tsushima pampas restoration.",
+	"Category": "GoT",
+	"CreatedBy": "GoT restoration",
+	"CanContainContent": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "GoTEnvironment",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		}
+	]
+}
