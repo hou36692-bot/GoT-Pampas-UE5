@@ -8,8 +8,11 @@
 ![PCG](https://img.shields.io/badge/PCG-World%20Partition%20%7C%20HLOD-2E7D32)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-![芒草原野主视图](docs/media/hero.jpg)
-<sub>UE 5.8 编辑器内实时渲染，Epic 画质，4K 渲染后缩小到 1920 宽。下同。</sub>
+![风吹过芒草原野](docs/media/demo_wind.webp)
+
+![角色跑过草丛，草叶被推开](docs/media/demo_interaction.webp)
+
+<sub>UE 5.8 编辑器内实时录屏。上：同一份阵风同时吹动草叶和芒草。下：PIE 试玩，角色跑过的地方草叶被交互场推开，身后留下一道草痕。</sub>
 
 > **English summary.** A personal rendering study that rebuilds the pampas fields of *Ghost of Tsushima* in UE 5.8. Grass blades are generated on the GPU every frame (quadtree tiles → compute → indirect draw → custom vertex factory). One shared HLSL wind model drives the GPU grass, the modelled pampas and trees, and a player-centred interaction field. The 1 km map streams through World Partition, with about 470k PCG pampas instances, 900 Nanite maples and HLOD. The structure follows Sucker Punch's public GDC 2021 / SIGGRAPH 2021 talks and was checked against PIX frame captures. In-editor PIE runs at about 14.6 ms per frame at 1080p High on an RTX 5060. No game assets, captures or disassembled game code are included in this repository.
 
@@ -32,6 +35,9 @@
 | **性能** | 1920×1080 / High，RTX 5060，编辑器 PIE 平均 **14.56 ms（68.7 FPS）**，p95 为 15.61 ms |
 
 ## 效果展示
+
+![芒草原野主视图](docs/media/hero.jpg)
+<sub>静帧均为 UE 5.8 编辑器内实时渲染，Epic 画质，4K 渲染后缩小到 1920 宽。</sub>
 
 **风**：同一份阵风同时驱动草叶的弯曲和芒草的整株倾斜。
 
@@ -179,6 +185,7 @@ float GoTGrassGustForce(float2 WorldXY, float4 MacroNoise, float4 MacroShape, fl
 - 消费者：
   - 草叶：VS 采样 RG（位移乘 6.5），CS 采样 BA（局部风）；
   - 芒草和树：只在根部采样一次，把位移换成额外的转角（芒草最多 50°）。
+- 实际效果见页首的第二段动图。
 
 ### 芒草与树的风响应
 
